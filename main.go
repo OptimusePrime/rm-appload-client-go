@@ -1,0 +1,177 @@
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+const MaxMessageLength = 10485760
+const MessageHeaderLength = 8
+
+const MessageSystemTerminate = 0xFFFFFFFF
+const MessageSystemNewCoordinator = 0xFFFFFFFE
+
+var ErrFailedConnectingToSocket = errors.New("failed to establish a connection to AppLoad Unix socket")
+var ErrFailedToReadFromSocket = errors.New("failed to read from AppLoad Unix socket")
+var ErrMessageTooLong = errors.New(fmt.Sprintf("AppLoad message exceeds maximum length (%v bytes)", MaxMessageLength))
+var ErrFailedSendingMessageHeader = errors.New("failed sending message header to AppLoad Unix socket")
+var ErrFailedSendingMessageContent = errors.New("failed sending message header to AppLoad Unix socket")
+var ErrFailedToApplyOption = errors.New("failed to apply backend option")
+
+type AppLoadBackend struct {
+	handlers map[MessageType]MessageHandler
+	Socket   *net.Conn
+}
+
+type BackendOption func(backend *AppLoadBackend, sender *MessageSender) error
+
+func WithCleanup(cleanup func()) BackendOption {
+	return func(backend *AppLoadBackend, _ *MessageSender) error {
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
+
+		go func() {
+			<-ctx.Done()
+
+			cleanup()
+		}()
+
+		return nil
+	}
+}
+
+func WithSetup(setup func(backend *AppLoadBackend, sender *MessageSender) error) BackendOption {
+	return func(backend *AppLoadBackend, sender *MessageSender) error {
+		return setup(backend, sender)
+	}
+}
+
+func (b *AppLoadBackend) Run(opts ...BackendOption) error {
+	socketPath := os.Args[1]
+	conn, err := net.Dial("unixpacket", socketPath)
+	if err != nil {
+		return wrapErrWithColon(ErrFailedConnectingToSocket, err)
+	}
+
+	b.Socket = &conn
+	sender := MessageSender{
+		backend: b,
+	}
+
+	for _, opt := range opts {
+		err = opt(b, &sender)
+		if err != nil {
+			return wrapErrWithColon(ErrFailedToApplyOption, err)
+		}
+	}
+
+	for {
+		headerBuf := make([]byte, MessageHeaderLength)
+		_, err = conn.Read(headerBuf)
+		if err != nil {
+			return wrapErrWithColon(ErrFailedToReadFromSocket, err)
+		}
+
+		header := new(MessageHeader)
+		header.Deserialize(headerBuf)
+
+		if header.length > MaxMessageLength {
+			return ErrMessageTooLong
+		}
+
+		if header.msgType == MessageSystemTerminate {
+			break
+		}
+
+		msgBuf := make([]byte, header.length)
+
+		_, err = conn.Read(msgBuf)
+		if err != nil {
+			return wrapErrWithColon(ErrFailedToReadFromSocket, err)
+		}
+		msg := string(msgBuf)
+
+		handler := b.handlers[header.msgType]
+		handler(msg, sender)
+	}
+
+	return nil
+}
+
+func (b *AppLoadBackend) RegisterMessageHandler(msgType MessageType, handler MessageHandler) {
+	b.handlers[msgType] = handler
+}
+
+type MessageType uint32
+
+type MessageHeader struct {
+	msgType MessageType
+	length  uint32
+}
+
+func (mh *MessageHeader) Serialize() []byte {
+	buf := make([]byte, MessageHeaderLength)
+
+	binary.NativeEndian.PutUint32(buf[0:4], uint32(mh.msgType))
+	binary.NativeEndian.PutUint32(buf[4:], mh.length)
+
+	return buf
+}
+
+func (mh *MessageHeader) Deserialize(headerBuf []byte) {
+	mh.msgType = MessageType(binary.NativeEndian.Uint32(headerBuf[0:4]))
+	mh.length = binary.NativeEndian.Uint32(headerBuf[4:])
+}
+
+type MessageSender struct {
+	backend *AppLoadBackend
+}
+
+func (s MessageSender) SendMessage(msgType MessageType, content string) error {
+	buf := []byte(content)
+
+	if len(buf) > MaxMessageLength {
+		return ErrMessageTooLong
+	}
+
+	header := MessageHeader{
+		msgType: msgType,
+		length:  uint32(len(buf)),
+	}
+	_, err := (*s.backend.Socket).Write(header.Serialize())
+	if err != nil {
+		return wrapErrWithColon(ErrFailedSendingMessageHeader, err)
+	}
+
+	_, err = (*s.backend.Socket).Write(buf)
+	if err != nil {
+		return wrapErrWithColon(ErrFailedSendingMessageContent, err)
+	}
+
+	return nil
+}
+
+type MessageHandler func(contents string, replier MessageSender)
+
+func wrapErrWithColon(errs ...error) error {
+	if len(errs) == 1 {
+		return errs[0]
+	}
+
+	newErr := fmt.Errorf("%w: %w", errs[0], errs[1])
+	if len(errs) < 3 {
+		return newErr
+	}
+
+	for _, err := range errs[2:] {
+		newErr = fmt.Errorf("%w: %w", newErr, err)
+	}
+
+	return newErr
+}
