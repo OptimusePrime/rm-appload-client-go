@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -19,14 +20,23 @@ const MessageSystemNewCoordinator = 0xFFFFFFFE
 
 var ErrFailedConnectingToSocket = errors.New("failed to establish a connection to AppLoad Unix socket")
 var ErrFailedToReadFromSocket = errors.New("failed to read from AppLoad Unix socket")
-var ErrMessageTooLong = errors.New(fmt.Sprintf("AppLoad message exceeds maximum length (%v bytes)", MaxMessageLength))
+var ErrMessageTooLong = fmt.Errorf("AppLoad message exceeds maximum length (%v bytes)", MaxMessageLength)
 var ErrFailedSendingMessageHeader = errors.New("failed sending message header to AppLoad Unix socket")
-var ErrFailedSendingMessageContent = errors.New("failed sending message header to AppLoad Unix socket")
+var ErrFailedSendingMessageContent = errors.New("failed sending message content to AppLoad Unix socket")
 var ErrFailedToApplyOption = errors.New("failed to apply backend option")
 
 type AppLoadBackend struct {
-	handlers map[MessageType]MessageHandler
-	Socket   *net.Conn
+	handlers   map[MessageType]MessageHandler
+	socketPath string
+	Socket     net.Conn
+}
+
+func NewAppLoadBackend() AppLoadBackend {
+	backend := AppLoadBackend{}
+	backend.handlers = map[MessageType]MessageHandler{}
+	backend.socketPath = os.Args[1]
+
+	return backend
 }
 
 type BackendOption func(backend *AppLoadBackend, sender *MessageSender) error
@@ -34,11 +44,11 @@ type BackendOption func(backend *AppLoadBackend, sender *MessageSender) error
 func WithCleanup(cleanup func()) BackendOption {
 	return func(backend *AppLoadBackend, _ *MessageSender) error {
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		defer stop()
 
 		go func() {
 			<-ctx.Done()
 
+			stop()
 			cleanup()
 		}()
 
@@ -53,13 +63,14 @@ func WithSetup(setup func(backend *AppLoadBackend, sender *MessageSender) error)
 }
 
 func (b *AppLoadBackend) Run(opts ...BackendOption) error {
-	socketPath := os.Args[1]
-	conn, err := net.Dial("unixpacket", socketPath)
+	conn, err := net.Dial("unixpacket", b.socketPath)
 	if err != nil {
 		return wrapErrWithColon(ErrFailedConnectingToSocket, err)
 	}
 
-	b.Socket = &conn
+	b.Socket = conn
+	defer b.Socket.Close()
+
 	sender := MessageSender{
 		backend: b,
 	}
@@ -73,7 +84,7 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 
 	for {
 		headerBuf := make([]byte, MessageHeaderLength)
-		_, err = conn.Read(headerBuf)
+		_, err = io.ReadFull(conn, headerBuf)
 		if err != nil {
 			return wrapErrWithColon(ErrFailedToReadFromSocket, err)
 		}
@@ -91,13 +102,16 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 
 		msgBuf := make([]byte, header.length)
 
-		_, err = conn.Read(msgBuf)
+		_, err = io.ReadFull(conn, msgBuf)
 		if err != nil {
 			return wrapErrWithColon(ErrFailedToReadFromSocket, err)
 		}
 		msg := string(msgBuf)
 
 		handler := b.handlers[header.msgType]
+		if handler == nil {
+			continue
+		}
 		handler(msg, sender)
 	}
 
@@ -144,12 +158,12 @@ func (s MessageSender) SendMessage(msgType MessageType, content string) error {
 		msgType: msgType,
 		length:  uint32(len(buf)),
 	}
-	_, err := (*s.backend.Socket).Write(header.Serialize())
+	_, err := s.backend.Socket.Write(header.Serialize())
 	if err != nil {
 		return wrapErrWithColon(ErrFailedSendingMessageHeader, err)
 	}
 
-	_, err = (*s.backend.Socket).Write(buf)
+	_, err = s.backend.Socket.Write(buf)
 	if err != nil {
 		return wrapErrWithColon(ErrFailedSendingMessageContent, err)
 	}
