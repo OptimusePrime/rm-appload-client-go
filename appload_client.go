@@ -107,18 +107,16 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 		}
 
 		msgBuf := make([]byte, header.length)
-
 		_, err = io.ReadFull(conn, msgBuf)
 		if err != nil {
 			return wrapErrWithColon(ErrFailedToReadFromSocket, err)
 		}
-		msg := string(msgBuf)
 
 		handler := b.handlers[header.msgType]
 		if handler == nil {
 			continue
 		}
-		handler(msg, sender)
+		handler(msgBuf, sender)
 	}
 
 	return nil
@@ -175,7 +173,7 @@ func (s MessageSender) SendMessage(msgType MessageType, content []byte) error {
 	return nil
 }
 
-type MessageHandler func(contents string, sender MessageSender)
+type MessageHandler func(msgContent []byte, sender MessageSender)
 
 func wrapErrWithColon(errs ...error) error {
 	if len(errs) == 1 {
