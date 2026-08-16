@@ -141,6 +141,6 @@ Both the backend and the UI can send and receive messages, the process is the sa
 The first four bytes is a 32-bit unsigned integer representing a message type - this is an arbitrary number set by the developer allowing handling of the message based on its type. The latter half of the array is another 32-bit unsigned integer representing the length of the message about to be sent, up to a maximum `10485760` bytes (10 MiB).
 2. The receiver is constantly listening for new message headers. Once a header is received, the receiver prepares to receive the message of the specified length.
 3. The sender now sends the message of the length specified in the header. This must be a string because AppLoad on the UI side will always convert the received data into a string.
-This constraint usually will not represent an issue, since it still allows an exchange of data via JSON, XML, etc.
+This constraint usually will not represent an issue, since it still allows an exchange of data via JSON, XML, etc. In all cases dealing with data sent or received, this library uses `[]byte` instead of `string` to allow easy use with various (e.g., JSON) `Marshal` and `Unmarshal` functions.
 4. The receiver reads the data and handles the message.
 
