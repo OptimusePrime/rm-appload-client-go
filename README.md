@@ -82,6 +82,8 @@ import (
 	appload "github.com/OptimusePrime/rm-appload-client-go"
 )
 
+const GreetingMessageType = 1
+
 type GreetingMessage struct {
 	content string
 	font    string
@@ -102,7 +104,7 @@ func main() {
 
 		data, _ := json.Marshal(greet)
 
-		return sender.SendMessage(1, data)
+		return sender.SendMessage(GreetingMessageType, data)
 	}))
 }
 ```
