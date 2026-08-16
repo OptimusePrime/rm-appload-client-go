@@ -1,4 +1,10 @@
-package main
+/*
+Package appload_client
+
+This is a library for writing backends for reMarkable AppLoad applications.
+It provides a fully fledged message exchange mechanism for communication with the app's U
+*/
+package appload_client
 
 import (
 	"context"

@@ -1,5 +1,7 @@
 # AppLoad Backend Client for Go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/OptimusePrime/rm-appload-client-go.svg)](https://pkg.go.dev/github.com/OptimusePrime/rm-appload-client-go)
+
 [AppLoad](https://github.com/asivery/rm-appload/) is a Xovi extension for reMarkable's (rM) native UI xochitl, which allows installing additional apps on rM, it supports all rM models (except perhaps rM 1).
 Native apps for AppLoad are written such that the UI is written in QML and the backend can be written in any language and communicate with the UI via AppLoad's protocol using Unix sockets.
 
