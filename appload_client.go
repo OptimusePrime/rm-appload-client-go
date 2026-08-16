@@ -126,6 +126,10 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 }
 
 func (b *AppLoadBackend) RegisterMessageHandler(msgType MessageType, handler MessageHandler) {
+	if b.Socket != nil {
+		return
+	}
+
 	b.handlers[msgType] = handler
 }
 
