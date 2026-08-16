@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
@@ -35,14 +36,15 @@ type AppLoadBackend struct {
 	handlers   map[MessageType]MessageHandler
 	socketPath string
 	Socket     net.Conn
+	writeMu    sync.Mutex
 }
 
-func NewAppLoadBackend() AppLoadBackend {
+func NewAppLoadBackend() *AppLoadBackend {
 	backend := AppLoadBackend{}
 	backend.handlers = map[MessageType]MessageHandler{}
 	backend.socketPath = os.Args[1]
 
-	return backend
+	return &backend
 }
 
 type BackendOption func(backend *AppLoadBackend, sender MessageSender) error
@@ -116,7 +118,10 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 		if handler == nil {
 			continue
 		}
-		handler(msgBuf, sender)
+
+		go func() {
+			handler(msgBuf, sender)
+		}()
 	}
 
 	return nil
@@ -160,6 +165,10 @@ func (s MessageSender) SendMessage(msgType MessageType, content []byte) error {
 		msgType: msgType,
 		length:  uint32(len(content)),
 	}
+
+	s.backend.writeMu.Lock()
+	defer s.backend.writeMu.Unlock()
+
 	_, err := s.backend.Socket.Write(header.Serialize())
 	if err != nil {
 		return wrapErrWithColon(ErrFailedSendingMessageHeader, err)
