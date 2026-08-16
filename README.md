@@ -29,13 +29,19 @@ const HelloUIMessageType = 10
 const HelloBackendMessageType = 11
 
 func main() {
+	// first, create a backend (there will always be one backend per app)
 	backend := appload.NewAppLoadBackend()
 	
+	// here, you register all message handlers for your backend
+	// that is, handlers for all message types your UI may send
+	// message type numbers (the first argument) are arbitrary numbers to identify messages on UI and backend
+	// content of the message must be a string (this includes JSON and other text-based formats)
 	backend.RegisterMessageHandler(HelloUIMessageType, func (contents string, sender MessageSender) {
 		fmt.Printf("UI says: %s\n", contents)
 		sender.SendMessage(HelloBackendMessageType, []byte("Hi there!"))
     })
 	
+	// run the backend, possibly with additional options (see below)
 	backend.Run()
 }
 ```
