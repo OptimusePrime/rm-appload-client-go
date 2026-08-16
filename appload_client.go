@@ -175,7 +175,7 @@ func (s MessageSender) SendMessage(msgType MessageType, content []byte) error {
 	return nil
 }
 
-type MessageHandler func(contents string, replier MessageSender)
+type MessageHandler func(contents string, sender MessageSender)
 
 func wrapErrWithColon(errs ...error) error {
 	if len(errs) == 1 {
