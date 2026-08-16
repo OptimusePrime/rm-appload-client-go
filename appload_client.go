@@ -2,7 +2,7 @@
 Package appload_client
 
 This is a library for writing backends for reMarkable AppLoad applications.
-It provides a fully fledged message exchange mechanism for communication with the app's U
+It provides a fully fledged message exchange mechanism for communication with the app's UI
 */
 package appload_client
 
