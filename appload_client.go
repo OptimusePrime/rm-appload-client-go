@@ -119,9 +119,7 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 			continue
 		}
 
-		go func() {
-			handler(msgBuf, sender)
-		}()
+		go handler(msgBuf, sender)
 	}
 
 	return nil
