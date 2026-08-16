@@ -39,10 +39,10 @@ func NewAppLoadBackend() AppLoadBackend {
 	return backend
 }
 
-type BackendOption func(backend *AppLoadBackend, sender *MessageSender) error
+type BackendOption func(backend *AppLoadBackend, sender MessageSender) error
 
 func WithCleanup(cleanup func()) BackendOption {
-	return func(backend *AppLoadBackend, _ *MessageSender) error {
+	return func(backend *AppLoadBackend, _ MessageSender) error {
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 		go func() {
@@ -56,8 +56,8 @@ func WithCleanup(cleanup func()) BackendOption {
 	}
 }
 
-func WithSetup(setup func(backend *AppLoadBackend, sender *MessageSender) error) BackendOption {
-	return func(backend *AppLoadBackend, sender *MessageSender) error {
+func WithSetup(setup func(backend *AppLoadBackend, sender MessageSender) error) BackendOption {
+	return func(backend *AppLoadBackend, sender MessageSender) error {
 		return setup(backend, sender)
 	}
 }
@@ -76,7 +76,7 @@ func (b *AppLoadBackend) Run(opts ...BackendOption) error {
 	}
 
 	for _, opt := range opts {
-		err = opt(b, &sender)
+		err = opt(b, sender)
 		if err != nil {
 			return wrapErrWithColon(ErrFailedToApplyOption, err)
 		}
@@ -147,23 +147,21 @@ type MessageSender struct {
 	backend *AppLoadBackend
 }
 
-func (s MessageSender) SendMessage(msgType MessageType, content string) error {
-	buf := []byte(content)
-
-	if len(buf) > MaxMessageLength {
+func (s MessageSender) SendMessage(msgType MessageType, content []byte) error {
+	if len(content) > MaxMessageLength {
 		return ErrMessageTooLong
 	}
 
 	header := MessageHeader{
 		msgType: msgType,
-		length:  uint32(len(buf)),
+		length:  uint32(len(content)),
 	}
 	_, err := s.backend.Socket.Write(header.Serialize())
 	if err != nil {
 		return wrapErrWithColon(ErrFailedSendingMessageHeader, err)
 	}
 
-	_, err = s.backend.Socket.Write(buf)
+	_, err = s.backend.Socket.Write(content)
 	if err != nil {
 		return wrapErrWithColon(ErrFailedSendingMessageContent, err)
 	}
