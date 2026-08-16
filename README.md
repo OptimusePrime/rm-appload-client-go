@@ -38,7 +38,7 @@ func main() {
 	// that is, handlers for all message types your UI may send
 	// message type numbers (the first argument) are arbitrary numbers to identify messages on UI and backend
 	// content of the message must be a string (this includes JSON and other text-based formats)
-	backend.RegisterMessageHandler(HelloUIMessageType, func (contents string, sender MessageSender) {
+	backend.RegisterMessageHandler(HelloUIMessageType, func (contents string, sender appload.MessageSender) {
 		fmt.Printf("UI says: %s\n", contents)
 		sender.SendMessage(HelloBackendMessageType, []byte("Hi there!"))
     })
